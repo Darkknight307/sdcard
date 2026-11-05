@@ -1,25 +1,25 @@
 # make_report.py  (helper - NOT part of the submission)
-# Run AFTER weak_scaling.py. It
-#   1. reads telemetry.json + benchmark_results.csv,
+# Run AFTER benchmark_gustafson.py. It
+#   1. reads benchmark_telemetry.json + scaling_results.csv,
 #   2. runs a small granularity probe with N0 = 10,000 (for Q3.3),
-#   3. writes diagnostics.txt with answers that quote your own numbers,
-#   4. builds <StudentID>_Exam/ and <StudentID>_Exam.zip.
+#   3. writes report.md (derivations, Table 1, Part 3 answers with your numbers),
+#   4. builds <StudentID>_Exam.zip with the four files at the archive root.
 #
 # Usage:  python make_report.py
 
-import csv, json, os, shutil, zipfile
+import csv, json, os, zipfile
 import multiprocessing as mp
 
-import weak_scaling as ws
+import benchmark_gustafson as ws
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROBE_N0 = 10_000
 
 
 def load():
-    with open(os.path.join(HERE, "telemetry.json")) as f:
+    with open(os.path.join(HERE, "benchmark_telemetry.json")) as f:
         tel = json.load(f)
-    with open(os.path.join(HERE, "benchmark_results.csv")) as f:
+    with open(os.path.join(HERE, "scaling_results.csv")) as f:
         rows = list(csv.DictReader(f))
     for r in rows:
         r["P"] = int(r["P"])
@@ -48,6 +48,52 @@ def fmt_s(x):
     return "N/A" if x is None else f"{x:.4f}"
 
 
+def to_markdown(lines):
+    """Join report lines: paragraphs get a blank line between them, consecutive
+    table rows / list items stay together, indented lines become code blocks."""
+    out, prev, in_fence = [], None, False
+    for line in lines:
+        if line.startswith("```"):
+            in_fence = not in_fence
+            out.append(line)
+            prev = "fence"
+            continue
+        if in_fence:
+            out.append(line)
+            continue
+        if not line.strip():
+            kind = "blank"
+        elif line.startswith("   "):
+            kind = "code"
+        elif line.startswith("|"):
+            kind = "table"
+        elif line.startswith("- "):
+            kind = "list"
+        else:
+            kind = "para"
+        if prev == "code" and kind != "code":
+            out.append("```")
+        if kind == "code":
+            if prev != "code":
+                if out and out[-1].strip():
+                    out.append("")
+                out.append("```")
+            out.append(line[3:])
+        elif kind == "blank":
+            out.append("")
+        else:
+            if out and out[-1].strip() and not (kind == prev and kind in ("table", "list")):
+                out.append("")
+            out.append(line)
+        prev = kind
+    if prev == "code":
+        out.append("```")
+    text = "\n".join(out)
+    while "\n\n\n" in text:
+        text = text.replace("\n\n\n", "\n\n")
+    return text.strip() + "\n"
+
+
 def build_text(tel, rows, probe):
     sid = tel["student_id"]
     n0 = tel["benchmark_parameters"]["N0"]
@@ -64,32 +110,76 @@ def build_text(tel, rows, probe):
     w = L.append
 
     # ------------------------------------------------------------------ header
-    w("PARALLEL COMPUTING - PRACTICAL EXAMINATION: DIAGNOSTICS")
-    w("=" * 72)
-    w(f"Student ID       : {sid}")
-    w(f"Seeds            : N0 = {n0:,}   K1 = {k1}   K2 = {k2}")
-    w(f"Machine          : {tel['os_platform']}")
-    w(f"Processor        : {cpu} ({tel['machine_architecture']})")
-    w(f"Cores / threads  : {tel['physical_cores']} physical / {tel['logical_threads']} logical"
-      f"  ->  P_phys = {p_phys}")
-    w(f"Caches           : {cache_txt}")
-    w(f"Python / NumPy   : {tel['python_version']} / {tel['numpy_version']}"
-      f"   (start method: {tel['multiprocessing_start_method']})")
-    w(f"Run timestamp    : {tel.get('timestamp', '-')}")
-    w(f"Timing method    : median of {tel['benchmark_parameters']['repeats']} repeats, "
-      f"pool start-up excluded; T_serial = Pool(1) running all P tasks.")
+    w("# Parallel Computing - Practical Examination Report")
     w("")
-    w("TABLE 1 (from benchmark_results.csv)")
-    w("-" * 72)
-    w(f"{'P':>3} {'Elements':>12} {'T_par (s)':>11} {'T_ser (s)':>11} {'S(P)':>8} {'s_emp(P)':>9}")
+    w(f"**Student ID:** {sid}  ")
+    w(f"**Run timestamp:** {tel.get('timestamp', '-')}")
+    w("")
+    w("## Machine profile (from benchmark_telemetry.json)")
+    w("")
+    w("| Item | Value |")
+    w("|---|---|")
+    w(f"| OS platform | {tel['os_platform']} |")
+    w(f"| Processor | {cpu} ({tel['machine_architecture']}) |")
+    w(f"| Physical cores / logical threads | {tel['physical_cores']} / {tel['logical_threads']} |")
+    w(f"| P_phys used (capped at 16) | {p_phys} |")
+    w(f"| Caches | {cache_txt} |")
+    w(f"| RAM | {tel.get('total_ram_gb', '-')} GB |")
+    w(f"| Python / NumPy | {tel['python_version']} / {tel['numpy_version']} |")
+    w(f"| multiprocessing start method | {tel['multiprocessing_start_method']} |")
+    w("")
+
+    # ------------------------------------------------------------------ Part 0
+    w("## Part 0: Student seed derivation")
+    w("")
+    w("```")
+    w(f"N0 = 800,000 + (STUDENT_ID % 25) * 40,000")
+    w(f"   = 800,000 + ({sid} % 25) * 40,000 = 800,000 + {sid % 25} * 40,000 = {n0:,}")
+    w(f"K1 = (STUDENT_ID % 8) + 2 = ({sid} % 8) + 2 = {sid % 8} + 2 = {k1}")
+    w(f"K2 = ((STUDENT_ID // 10) % 6) + 3 = ({sid // 10} % 6) + 3 = {(sid // 10) % 6} + 3 = {k2}")
+    w("```")
+    w("")
+
+    # ------------------------------------------------------------------ Part 1
+    w("## Part 1: Benchmark harness (benchmark_gustafson.py)")
+    w("")
+    w("- **Weak scaling:** for every P the problem is `N(P) = P x N0`. P tasks are created, each "
+      "with its own N0-element float64 array (`np.linspace(i, i + 2, N0)`), so the per-core work "
+      "is constant.")
+    w("- **Kernel:** `weights = sqrt(|data*K1| + 1)`, `kernel_val = 1 / (1 + (data/K2)^2)`; "
+      "each task returns `sum(weights * kernel_val)`.")
+    w(f"- **Process counts:** P in {{1, 2, 4, P_phys, 2*P_phys}} = {tel['process_counts']}.")
+    w("- **T_parallel(P):** wall-clock time for a `multiprocessing.Pool(P)` to run the P tasks "
+      "concurrently (`starmap`, chunksize 1).")
+    w("- **T_serial(P):** wall-clock time for a `Pool(1)` (one process) to run the same P tasks "
+      "one after another. For P = 1 both definitions are the same experiment, so S(1) = 1.")
+    w(f"- **Timing:** one untimed warm-up per pool, then the median of "
+      f"{tel['benchmark_parameters']['repeats']} repeats. Pool start-up is excluded. A checksum "
+      "confirms that the serial and parallel runs give the same result.")
+    w("- **Derived metrics:** `S(P) = T_serial / T_parallel`, `s_emp(P) = (P - S) / (P - 1)`, "
+      "`E(P) = S / P`.")
+    w("")
+
+    # ------------------------------------------------------------------ Part 2
+    w("## Part 2: Table 1 (exact values from scaling_results.csv)")
+    w("")
+    w("| Processes (P) | Total Elements (P x N0) | T_parallel (s) | T_serial (s) | Speedup S(P) | s_emp(P) |")
+    w("|---|---|---|---|---|---|")
     for r in rows:
-        w(f"{r['P']:>3} {r['P'] * n0:>12,} {r['T_parallel_s']:>11.6f} {r['T_serial_s']:>11.6f} "
-          f"{r['speedup']:>8.4f} {fmt_s(r['s_emp']):>9}")
+        label = str(r["P"])
+        if r["P"] == p_phys:
+            label += " (P_phys)"
+        elif r["P"] == 2 * p_phys:
+            label += " (2 x P_phys)"
+        w(f"| {label} | {r['P']} x N0 = {r['P'] * n0:,} | {r['T_parallel_s']:.6f} | "
+          f"{r['T_serial_s']:.6f} | {r['speedup']:.4f} | {fmt_s(r['s_emp'])} |")
+    w("")
+    w("## Part 3: Hardware diagnostics & scaling analysis")
     w("")
 
     # ------------------------------------------------------------------ Q3.1
-    w("Q3.1  SCALING EFFICIENCY & AGGREGATE CACHE MULTIPLYING")
-    w("-" * 72)
+    w("### Q3.1: Scaling Efficiency and Aggregate Cache Multiplying")
+    w("")
     w("E(P) = S(P) / P:")
     for r in rows:
         w(f"   P = {r['P']:>2}:  E = {r['speedup']:.4f} / {r['P']} = {r['efficiency']:.4f}")
@@ -108,6 +198,11 @@ def build_text(tel, rows, probe):
     w(f"At P = P_phys = {p_phys}, E = {by_p[p_phys]['efficiency']:.3f}; at P = 2*P_phys = "
       f"{2 * p_phys}, E = {by_p[2 * p_phys]['efficiency']:.3f}. Beyond P_phys the extra processes "
       f"only time-share the same {tel['physical_cores']} physical cores, so E must fall.")
+    if "apple" in cpu.lower():
+        w(f"Note for Apple Silicon: the {tel['physical_cores']} physical cores are not identical. "
+          "They mix high-performance (P) cores and slower efficiency (E) cores. Once P exceeds "
+          "the number of P-cores, some tasks land on E-cores and the slowest task sets "
+          "T_parallel, which lowers E(P) before P_phys is reached.")
     w("")
     w(f"Cache effect: each task touches N0 x 8 B = {n0 * 8 / 1024**2:.2f} MB per array, about "
       f"{task_mb:.1f} MB for the three arrays named in the brief (more with NumPy temporaries).")
@@ -131,8 +226,8 @@ def build_text(tel, rows, probe):
     w("")
 
     # ------------------------------------------------------------------ Q3.2
-    w("Q3.2  MEMORY BUS CONTENTION & BANDWIDTH SATURATION")
-    w("-" * 72)
+    w("### Q3.2: Memory Bus Contention and Bandwidth Saturation")
+    w("")
     w("Memory footprint (MB) = P x N0 x 8 B x 3 / 1024^2 ;  throughput (GB/s) = MB / 1024 / T_par")
     sel = [p for p in (1, 4, p_phys) if p in by_p]
     seen = []
@@ -168,16 +263,17 @@ def build_text(tel, rows, probe):
     w("")
 
     # ------------------------------------------------------------------ Q3.3
-    w("Q3.3  KERNEL GRANULARITY & AMORTIZATION OF RUNTIME DISPATCH")
-    w("-" * 72)
+    w("### Q3.3: Kernel Granularity and Amortization of Runtime Dispatch")
+    w("")
     w(f"To check this empirically, the same harness was re-run with N0 = {PROBE_N0:,} "
       f"({n0 // PROBE_N0}x smaller than the assigned {n0:,}):")
-    w(f"{'P':>3} {'T_par (s)':>11} {'T_ser (s)':>11} {'S(P)':>8} {'s_emp':>9}   "
-      f"{'s_emp @N0=' + format(n0, ','):>18}")
+    w(f"| P | T_parallel (s) | T_serial (s) | S(P) | s_emp(P) at N0 = {PROBE_N0:,} "
+      f"| s_emp(P) at N0 = {n0:,} |")
+    w("|---|---|---|---|---|---|")
     for q in probe:
         big = by_p[q["P"]]["s_emp"]
-        w(f"{q['P']:>3} {q['T_parallel_s']:>11.6f} {q['T_serial_s']:>11.6f} {q['speedup']:>8.4f} "
-          f"{fmt_s(q['s_emp']):>9}   {fmt_s(big):>18}")
+        w(f"| {q['P']} | {q['T_parallel_s']:.6f} | {q['T_serial_s']:.6f} | {q['speedup']:.4f} "
+          f"| {fmt_s(q['s_emp'])} | {fmt_s(big)} |")
     w("")
     floor = min(q["T_parallel_s"] for q in probe)
     w(f"With N0 = {PROBE_N0:,} the kernel itself needs only microseconds, but T_parallel never "
@@ -187,16 +283,16 @@ def build_text(tel, rows, probe):
       f"slower than the serial one. That breaks Gustafson's assumption that coordination "
       f"cost is negligible compared with the scaled parallel work.")
     w("Where the floor comes from, per task and per pool.starmap() call:")
-    w(" * IPC: Pool sends every task through a multiprocessing queue (an OS pipe, or a named "
+    w("- IPC: Pool sends every task through a multiprocessing queue (an OS pipe, or a named "
       "pipe on Windows) guarded by locks, and results come back on a second pipe. Each hop "
       "is at least one write/read system call plus a wake-up of the receiving process. The "
       "main process also runs feeder and result-handler threads that must be scheduled.")
-    w(" * Pickle serialization: every task tuple (seed, N0, K1, K2) is pickled in the parent "
+    w("- Pickle serialization: every task tuple (seed, N0, K1, K2) is pickled in the parent "
       "and unpickled in the worker, and the returned float is pickled back. Here the payload "
       "is tiny because each worker builds its own array with np.linspace. If NumPy arrays "
       "were sent instead, pickling would copy N0 x 8 bytes per task through the pipe, which "
       "is a cost proportional to the data and would erase the parallel gain.")
-    w(" * Context switches: each task needs the parent's feeder thread, the worker and the "
+    w("- Context switches: each task needs the parent's feeder thread, the worker and the "
       "result-handler thread to be scheduled in turn, a few context switches of roughly "
       "1-10 us each. When P > P_phys the workers are also time-sliced on the same cores. "
       "Process start-up (fork/spawn plus re-importing NumPy, ~50-500 ms) is even larger. It "
@@ -208,8 +304,8 @@ def build_text(tel, rows, probe):
     w("")
 
     # ------------------------------------------------------------------ Q3.4
-    w("Q3.4  DYNAMIC THERMAL THROTTLING & TURBO BOOST DIVERGENCE")
-    w("-" * 72)
+    w("### Q3.4: Dynamic Thermal Throttling and Turbo Boost Divergence")
+    w("")
     w("Model: a task of W cycles runs in t = W / f. The serial baseline runs on ONE busy core, "
       "which turbo-boosts to f1. The parallel run loads all cores, which settle at the lower "
       "all-core clock f_P < f1 (TDP and thermal limits).")
@@ -244,31 +340,32 @@ def build_text(tel, rows, probe):
       "AC power, let it cool between runs, and/or normalise each time by the measured "
       "frequency (e.g. with HWiNFO, Intel Power Gadget or turbostat).")
     w("")
-    return "\n".join(L)
+    return to_markdown(L)
+
+
+SUBMISSION_FILES = ("report.md", "benchmark_gustafson.py",
+                    "benchmark_telemetry.json", "scaling_results.csv")
 
 
 def package(sid):
-    folder = os.path.join(HERE, f"{sid}_Exam")
-    os.makedirs(folder, exist_ok=True)
-    for name in ("weak_scaling.py", "telemetry.json", "benchmark_results.csv", "diagnostics.txt"):
-        shutil.copy2(os.path.join(HERE, name), os.path.join(folder, name))
+    # exactly the four required files, at the root of the archive (no subfolder)
     zip_path = os.path.join(HERE, f"{sid}_Exam.zip")
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
-        for name in sorted(os.listdir(folder)):
-            z.write(os.path.join(folder, name), arcname=f"{sid}_Exam/{name}")
+        for name in SUBMISSION_FILES:
+            z.write(os.path.join(HERE, name), arcname=name)
     return zip_path
 
 
 def main():
     tel, rows = load()
     if tel["student_id"] != ws.STUDENT_ID:
-        raise SystemExit("telemetry.json was produced with a different STUDENT_ID - "
-                         "re-run weak_scaling.py first.")
+        raise SystemExit("benchmark_telemetry.json was produced with a different "
+                         "STUDENT_ID - re-run benchmark_gustafson.py first.")
     print(f"Running granularity probe (N0 = {PROBE_N0:,}) ...")
     probe = granularity_probe(tel["process_counts"])
-    with open(os.path.join(HERE, "diagnostics.txt"), "w", encoding="utf-8") as f:
+    with open(os.path.join(HERE, "report.md"), "w", encoding="utf-8") as f:
         f.write(build_text(tel, rows, probe))
-    print("Saved diagnostics.txt")
+    print("Saved report.md")
     print("Created", package(tel["student_id"]))
 
 

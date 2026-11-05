@@ -1,12 +1,12 @@
-# weak_scaling.py
+# benchmark_gustafson.py
 # Weak-scaling (Gustafson-Barsis) benchmark harness for a memory-intensive
 # weighted rational kernel reduction, using multiprocessing.Pool.
 #
 # Outputs (written next to this script):
-#   telemetry.json         - hardware / software profile of the machine
-#   benchmark_results.csv  - raw timings, speedup, serial fraction per P
+#   benchmark_telemetry.json - hardware / software profile of the machine
+#   scaling_results.csv      - raw timings, speedup, serial fraction per P
 #
-# Usage:  python weak_scaling.py
+# Usage:  python benchmark_gustafson.py
 
 import os, sys, time, platform, json, csv
 import multiprocessing as mp
@@ -298,13 +298,13 @@ def main():
     # ----------------------------------------------------------------------
     # 5. Export artifacts
     # ----------------------------------------------------------------------
-    with open(os.path.join(OUT_DIR, "telemetry.json"), "w") as f:
+    with open(os.path.join(OUT_DIR, "benchmark_telemetry.json"), "w") as f:
         json.dump(telemetry, f, indent=2)
-    with open(os.path.join(OUT_DIR, "benchmark_results.csv"), "w", newline="") as f:
+    with open(os.path.join(OUT_DIR, "scaling_results.csv"), "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
-    print("\nSaved telemetry.json and benchmark_results.csv to", OUT_DIR)
+    print("\nSaved benchmark_telemetry.json and scaling_results.csv to", OUT_DIR)
 
 
 if __name__ == "__main__":
