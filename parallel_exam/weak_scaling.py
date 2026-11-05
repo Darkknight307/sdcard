@@ -14,7 +14,7 @@ import subprocess
 import statistics
 import numpy as np
 
-STUDENT_ID = 2493129439  # Paste your Student ID as a pure integer
+STUDENT_ID = 240103177  # Paste your Student ID as a pure integer
 
 N0 = 800000 + (STUDENT_ID % 25) * 40000
 K1 = (STUDENT_ID % 8) + 2
