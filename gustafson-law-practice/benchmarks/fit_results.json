@@ -1,0 +1,13 @@
+{
+  "alpha_observed": 0.05579263761300895,
+  "alpha_standard_error": 0.008917166268795518,
+  "r_squared": 0.9992684999351188,
+  "fitted_thread_counts": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "hardware_concurrency": 4,
+  "model": "S(P) = P - alpha (P - 1), least squares through origin on (P-1, P-S)"
+}
